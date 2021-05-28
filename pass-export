@@ -1,0 +1,42 @@
+#! /usr/bin/env bash
+
+function singleline {
+  COUNT=0;
+   while read LINE; do
+      if [[ "$COUNT" -gt "0" ]] ; then
+         echo -n "$1";
+      fi
+      let COUNT=$COUNT+1;
+      echo -n "$LINE";
+   done
+}
+
+if ! [[ -n "$PASSWORD_STORE_DIR" ]]; then
+  if [[ -d $HOME/.password_store ]]; then
+    export PASSWORD_STORE_DIR="$HOME/.password_store"
+  else
+    echo "could not find password store location.  please set as \$PASSWORD_STORE_DIR"
+    exit -1
+  fi
+fi
+
+>&2 echo "# exporting from $PASSWORD_STORE_DIR on $(date)"
+
+find $PASSWORD_STORE_DIR -name '*.gpg' | while read FILE; do
+  filecontents=$(gpg --decrypt "$FILE" 2>/dev/null);
+  sitename=$(echo "$FILE" | sed -e "s|$PASSWORD_STORE_DIR||" -e s'/\///' -e 's/.gpg//' -e s'/ /_/g');
+  url=$(echo "$filecontents" | grep "^url:" | sed -e 's/^url: //' -e 's/?.*//'); 
+  if ! [[ -n "$url" ]]; then
+    url=$(echo $sitename | sed -e 's/Generated_Password_for_//' -e 's/_.*//' -e 's/.*\///');
+  fi
+  login=$(echo "$filecontents" | grep "^login:" | sed -e 's/^login: //'); 
+  if ! [[ -n "$login" ]]; then
+    login=$(echo "$filecontents" | grep "^user:" | sed -e 's/^user: //'); 
+  fi
+  password=$(echo "$filecontents" | head -n1); 
+  totp=$(echo "$filecontents" | grep "^otpauth:"); 
+  rest=$(echo "$filecontents"  | tail -n+2 | grep -v '^login:' | grep -v '^autotype' | grep -v '^otpauth' | grep -v '^url' | grep -v '^user: ' | singleline "','");
+
+  echo \'$sitename\',\'$url\',\'$login\',\'$password\',\'$totp\',\'$rest\';
+done
+
